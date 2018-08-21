@@ -53,23 +53,26 @@ if isunix()
     end
 elseif iswindows()
     function download(source::AbstractString; retry=5)
-        dest = Vector{UInt16}(undef, 261)
-        for i in 1:retry
-            res = ccall((:URLDownloadToCacheFileW, :urlmon), stdcall, Cuint,
-              (Ptr{Cvoid}, Ptr{UInt16}, Ptr{UInt16}, Clong, Cint, Ptr{Cvoid}),
-              C_NULL, transcode(UInt16, source), dest, sizeof(dest) >> 1, 0, C_NULL)
-            if res == 0
-                resize!(dest, findfirst(iszero, dest) - 1)
-                filename = transcode(String, dest)
-                if isfile(filename)
-                    return read(filename, String), 200
+        content = ""
+        status = 0
+        mktemp() do path, file
+            close(file)
+            for i in 1:retry
+                try
+                    run(`powershell -Command
+                            Invoke-WebRequest
+                            -Uri $source
+                            -OutFile $path`)
+                    content = read(path, String)
+                    status = 200
+                    break
+                catch err
+                    warn("Unknown download failure: $err")
+                    warn("Retry $i/$retry downloading: $source")
                 end
-            else
-                warn("Unknown download failure, error code: $res")
             end
-            warn("Retry $i/$retry downloading: $source")
         end
-        return "", 0
+        content, status
     end
 else
     error("Platform not supported: $(Sys.KERNEL)")
